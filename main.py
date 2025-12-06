@@ -105,6 +105,7 @@ rescued = 0
 moves = 0
 GOAL_CHICKENS = 256  # default (will be set from menu)
 current_pair = None
+last_place_time = 0  # global
 
 # Menü-Hintergrundbild
 menu_bg = pygame.image.load(resource_path("assets/BG.png")).convert()
@@ -453,10 +454,13 @@ while running:
                 gx = (mx - PADDING) // TILE_SIZE
                 gy = (my - PADDING) // TILE_SIZE
                 if 0 <= gx < GRID_W and 0 <= gy < GRID_H and can_place(gx, gy, current_pair[0]):
-                    place_pair(gx, gy, current_pair[0])
-                    moves += 1
-                    current_pair = next_pair
-                    next_pair = new_pair()
+                    current_time = pygame.time.get_ticks()
+                    if triggered and current_time - last_place_time > 100:  # 100ms Sperre
+                            place_pair(gx, gy, current_pair[0])
+                            last_place_time = current_time
+                            moves += 1
+                            current_pair = next_pair
+                            next_pair = new_pair()
 
                     if rescued >= GOAL_CHICKENS:
                         state = "victory"
