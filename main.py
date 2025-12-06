@@ -42,8 +42,14 @@ BTN_HOVER = (80, 95, 120)
 pygame.init()
 try:
     pygame.mixer.init()
+    # Menü-Musik
+    try:
+        menu_music = resource_path("assets/music.wav")
+    except:
+        menu_music = None
 except Exception:
     print("Warnung: Mixer konnte nicht initialisiert werden (kein Sound).")
+
 
 screen = pygame.display.set_mode((SCREEN_W, SCREEN_H))
 pygame.display.set_caption("Sort the CHICKENS! 🐔")
@@ -98,7 +104,12 @@ moves = 0
 GOAL_CHICKENS = 256  # default (will be set from menu)
 current_pair = None
 
-# Load chicken sprites from assets
+# Menü-Hintergrundbild
+menu_bg = pygame.image.load(resource_path("assets/BG.png")).convert()
+menu_bg = pygame.transform.smoothscale(menu_bg, (SCREEN_W, SCREEN_H))
+
+
+# Hühner Bilder
 chicken_images = []
 for i in range(CHICKEN_TYPES):
     path = resource_path(f"assets/chicken{i}.png")
@@ -185,6 +196,7 @@ def any_move_possible(offsets):
     return False
 
 def reset_game_to_menu():
+    pygame.mixer.music.stop()
     global grid, rescued, moves, current_pair, state, gameover_played, victory_played, GOAL_CHICKENS
     grid = [[-1 for _ in range(GRID_H)] for _ in range(GRID_W)]
     rescued = 0
@@ -193,8 +205,11 @@ def reset_game_to_menu():
     state = "menu"
     gameover_played = False
     victory_played = False
+    
+
 
 def start_game(goal):
+    pygame.mixer.music.stop()
     global GOAL_CHICKENS, current_pair, next_pair, state, rescued, moves, gameover_played, victory_played
     GOAL_CHICKENS = goal
     grid[:] = [[-1 for _ in range(GRID_H)] for _ in range(GRID_W)]
@@ -411,18 +426,33 @@ while running:
 
     # --- Render by state ---
     if state == "menu":
-        screen.fill(BG)
+        # Hintergrund
+        screen.blit(menu_bg, (0, 0))
+
+        # Musik starten, falls nicht bereits laufend
+        if not pygame.mixer.music.get_busy() and menu_music:
+            try:
+                pygame.mixer.music.load(menu_music)
+                pygame.mixer.music.set_volume(0.45)
+                pygame.mixer.music.play(-1)
+            except Exception as e:
+                print("Konnte Menü-Musik nicht abspielen:", e)
+
+        # Titel
         title = font_title.render("Sort the CHICKENS!", True, ACCENT)
         screen.blit(title, title.get_rect(center=(SCREEN_W//2, 120)))
 
-        # draw generated buttons
+        # Buttons
         mx, my = mouse_pos
         draw_button(btn_easy, "Easy — 128 Hühner", btn_easy.collidepoint((mx,my)))
         draw_button(btn_mid,  "Medium — 256 Hühner", btn_mid.collidepoint((mx,my)))
         draw_button(btn_hard, "Hardcore — 512 Hühner", btn_hard.collidepoint((mx,my)))
 
+        # Hinweis
         hint = font.render("Wähle per Klick oder Taste: E / M / H", True, WHITE)
         screen.blit(hint, hint.get_rect(center=(SCREEN_W//2, 440)))
+
+
 
     elif state == "playing":
         draw_game()
