@@ -1,0 +1,441 @@
+import pygame
+import random
+import sys
+import os
+
+# ----------------------------
+# Helpers
+# ----------------------------
+def resource_path(relpath: str) -> str:
+    """Return path that works for dev and for PyInstaller bundles."""
+    if hasattr(sys, "_MEIPASS"):
+        return os.path.join(sys._MEIPASS, relpath)
+    return os.path.join(os.path.abspath("."), relpath)
+
+# ----------------------------
+# Config
+# ----------------------------
+GRID_W, GRID_H = 6, 6
+TILE_SIZE = 72
+PADDING = 20
+INFO_PANEL_H = 100
+SCREEN_W = GRID_W * TILE_SIZE + PADDING * 2 + 240
+SCREEN_H = GRID_H * TILE_SIZE + PADDING * 2 + INFO_PANEL_H
+FPS = 60
+
+CHICKEN_TYPES = 4
+
+# Colors
+BG = (30, 30, 40)
+PANEL = (45, 50, 65)
+WHITE = (240, 240, 240)
+GREY = (170, 178, 189)
+ACCENT = (255, 199, 92)
+RED = (220, 60, 60)
+GREEN = (100, 220, 140)
+BTN_BG = (60, 70, 90)
+BTN_HOVER = (80, 95, 120)
+
+# ----------------------------
+# Initialization
+# ----------------------------
+pygame.init()
+try:
+    pygame.mixer.init()
+except Exception:
+    print("Warnung: Mixer konnte nicht initialisiert werden (kein Sound).")
+
+screen = pygame.display.set_mode((SCREEN_W, SCREEN_H))
+pygame.display.set_caption("Sort the CHICKENS! 🐔")
+clock = pygame.time.Clock()
+
+# Fonts (try emoji-capable, fallback to default)
+EMOJI_FONTS = ["Segoe UI Emoji", "Noto Color Emoji", "Apple Color Emoji", "Arial Unicode MS"]
+def load_font(size=28, emoji_test_char="🐔"):
+    for name in EMOJI_FONTS:
+        try:
+            f = pygame.font.SysFont(name, size)
+            surf = f.render(emoji_test_char, True, (0,0,0))
+            if surf.get_width() > 0:
+                return f
+        except Exception:
+            pass
+    return pygame.font.SysFont(None, size)
+
+font = load_font(22)
+font_big = load_font(36)
+font_title = load_font(44)
+
+# ----------------------------
+# Sounds (optional, tolerant)
+# ----------------------------
+def try_load_sound(path):
+    try:
+        s = pygame.mixer.Sound(resource_path(path))
+        return s
+    except Exception:
+        return None
+
+sounds = {
+    "place": try_load_sound("assets/place.wav"),
+    "match": try_load_sound("assets/match.wav"),
+    "victory": try_load_sound("assets/win.wav"),
+    "gameover": try_load_sound("assets/gameover.wav"),
+}
+
+# set sane volumes if available
+if sounds["place"]: sounds["place"].set_volume(0.4)
+if sounds["match"]: sounds["match"].set_volume(0.25)
+if sounds["victory"]: sounds["victory"].set_volume(0.6)
+if sounds["gameover"]: sounds["gameover"].set_volume(0.5)
+
+# ----------------------------
+# Game data
+# ----------------------------
+grid = [[-1 for _ in range(GRID_H)] for _ in range(GRID_W)]
+rescued = 0
+moves = 0
+GOAL_CHICKENS = 256  # default (will be set from menu)
+current_pair = None
+
+# Load chicken sprites from assets
+chicken_images = []
+for i in range(CHICKEN_TYPES):
+    path = resource_path(f"assets/chicken{i}.png")
+    img = pygame.image.load(path).convert_alpha()
+    img = pygame.transform.smoothscale(img, (TILE_SIZE-4, TILE_SIZE-4))
+    chicken_images.append(img)
+
+
+# States
+state = "menu"  # menu, playing, gameover, victory
+gameover_played = False
+victory_played = False
+
+# Touchpad placement guard
+mouse_was_pressed = False
+
+# ----------------------------
+# Helpers: game logic
+# ----------------------------
+def new_pair():
+    c1, c2 = random.randint(0, CHICKEN_TYPES-1), random.randint(0, CHICKEN_TYPES-1)
+    orientation = random.choice(["h", "v"])
+    if orientation == "h":
+        offsets = [(0,0,c1), (1,0,c2)]
+    else:
+        offsets = [(0,0,c1), (0,1,c2)]
+    return offsets, orientation
+
+def can_place(x, y, offsets):
+    for ox, oy, _ in offsets:
+        tx, ty = x + ox, y + oy
+        if tx < 0 or tx >= GRID_W or ty < 0 or ty >= GRID_H: return False
+        if grid[tx][ty] != -1: return False
+    return True
+
+def find_matches():
+    matches = set()
+    # horizontal
+    for y in range(GRID_H):
+        run_len = 1
+        for x in range(1, GRID_W+1):
+            if x < GRID_W and grid[x][y] != -1 and grid[x][y] == grid[x-1][y]:
+                run_len += 1
+            else:
+                if run_len >= 3:
+                    for k in range(run_len):
+                        matches.add((x-1-k, y))
+                run_len = 1
+    # vertical
+    for x in range(GRID_W):
+        run_len = 1
+        for y in range(1, GRID_H+1):
+            if y < GRID_H and grid[x][y] != -1 and grid[x][y] == grid[x][y-1]:
+                run_len += 1
+            else:
+                if run_len >= 3:
+                    for k in range(run_len):
+                        matches.add((x, y-1-k))
+                run_len = 1
+    return matches
+
+def place_pair(x, y, offsets):
+    global rescued
+    for ox, oy, c in offsets:
+        tx, ty = x + ox, y + oy
+        grid[tx][ty] = c
+    # on place sound
+    if sounds["place"]: sounds["place"].play()
+    # resolve matches (no gravity)
+    while True:
+        matches = find_matches()
+        if not matches:
+            break
+        for (mx, my) in matches:
+            grid[mx][my] = -1
+            rescued += 1
+        if sounds["match"]: sounds["match"].play()
+
+def any_move_possible(offsets):
+    for x in range(GRID_W):
+        for y in range(GRID_H):
+            if can_place(x, y, offsets):
+                return True
+    return False
+
+def reset_game_to_menu():
+    global grid, rescued, moves, current_pair, state, gameover_played, victory_played, GOAL_CHICKENS
+    grid = [[-1 for _ in range(GRID_H)] for _ in range(GRID_W)]
+    rescued = 0
+    moves = 0
+    current_pair = new_pair()
+    state = "menu"
+    gameover_played = False
+    victory_played = False
+
+def start_game(goal):
+    global GOAL_CHICKENS, current_pair, next_pair, state, rescued, moves, gameover_played, victory_played
+    GOAL_CHICKENS = goal
+    grid[:] = [[-1 for _ in range(GRID_H)] for _ in range(GRID_W)]
+    rescued = 0
+    moves = 0
+    current_pair = new_pair()
+    next_pair = new_pair()  # das kommende Paar
+    state = "playing"
+    gameover_played = False
+    victory_played = False
+
+# ----------------------------
+# UI helpers (draw generated buttons & overlays)
+# ----------------------------
+def draw_button(rect, text, hover=False):
+    color = BTN_HOVER if hover else BTN_BG
+    pygame.draw.rect(screen, color, rect, border_radius=10)
+    pygame.draw.rect(screen, (20,20,30), rect, 2, border_radius=10)
+    lbl = font.render(text, True, WHITE)
+    screen.blit(lbl, lbl.get_rect(center=rect.center))
+
+def draw_game():
+    # board
+    screen.fill(BG)
+    pygame.draw.rect(screen, PANEL, (PADDING-6, PADDING-6, GRID_W*TILE_SIZE+12, GRID_H*TILE_SIZE+12), border_radius=16)
+    for x in range(GRID_W):
+        for y in range(GRID_H):
+            rect = pygame.Rect(PADDING + x*TILE_SIZE, PADDING + y*TILE_SIZE, TILE_SIZE-4, TILE_SIZE-4)
+            draw_chicken(rect, grid[x][y])
+
+    # preview (mouse)
+    if current_pair is not None:
+        mx, my = pygame.mouse.get_pos()
+        gx = (mx - PADDING) // TILE_SIZE
+        gy = (my - PADDING) // TILE_SIZE
+        if 0 <= gx < GRID_W and 0 <= gy < GRID_H:
+            valid = can_place(gx, gy, current_pair[0])
+            if valid:
+                alpha = 140
+                tint = None
+            else:
+                alpha = 180
+                tint = RED
+            for ox, oy, c in current_pair[0]:
+                rect = pygame.Rect(PADDING + (gx+ox)*TILE_SIZE, PADDING + (gy+oy)*TILE_SIZE, TILE_SIZE-4, TILE_SIZE-4)
+                draw_chicken(rect, c, alpha=alpha, tint=tint)
+
+    # next-pair box
+    base_x = GRID_W*TILE_SIZE + PADDING*2 + 20
+    base_y = PADDING + 40
+    label = font.render("Nächstes Paar:", True, WHITE)
+    screen.blit(label, (base_x, base_y-30))
+    for ox, oy, c in next_pair[0]:
+        rect = pygame.Rect(base_x + ox*TILE_SIZE, base_y + oy*TILE_SIZE, TILE_SIZE-4, TILE_SIZE-4)
+        draw_chicken(rect, c)
+
+    # info panel
+    info_y = PADDING + GRID_H*TILE_SIZE + 20
+    pygame.draw.rect(screen, PANEL, (PADDING-6, info_y-6, GRID_W*TILE_SIZE+12, INFO_PANEL_H), border_radius=16)
+    text1 = font.render(f"Sortiert: {rescued}/{GOAL_CHICKENS}", True, ACCENT)
+    text2 = font.render(f"Züge: {moves}", True, WHITE)
+    screen.blit(text1, (PADDING+10, info_y+10))
+    screen.blit(text2, (PADDING+10, info_y+40))
+
+def draw_chicken(rect, chicken_id, alpha=255, tint=None):
+    if chicken_id < 0:
+        pygame.draw.rect(screen, (60,65,80), rect, border_radius=12)
+        return
+    img = chicken_images[chicken_id]
+    if tint:
+        # draw tinted version on the fly
+        temp = img.copy()
+        tint_surf = pygame.Surface(temp.get_size(), pygame.SRCALPHA)
+        tint_surf.fill((*tint, alpha))
+        temp.blit(tint_surf, (0,0), special_flags=pygame.BLEND_RGBA_MULT)
+        temp.set_alpha(255 if alpha >= 255 else alpha)
+        screen.blit(temp, rect)
+    else:
+        tmp = img.copy()
+        tmp.set_alpha(alpha)
+        screen.blit(tmp, rect)
+
+def draw_overlay(title, subtitle=None, color=ACCENT, bg_style="fancy"):
+    """
+    bg_style: 'fancy' -> gradient / painted background; 'solid' -> dark translucent
+    """
+    if bg_style == "fancy":
+        # draw a nice radial-ish background
+        overlay = pygame.Surface((SCREEN_W, SCREEN_H), pygame.SRCALPHA)
+        for i in range(160, 0, -8):
+            alpha = int(180 * (i / 160))
+            radius = int(max(SCREEN_W, SCREEN_H) * (i / 160))
+            pygame.draw.circle(overlay, (20, 30, 40, alpha), (SCREEN_W//2, SCREEN_H//2), radius)
+        screen.blit(overlay, (0,0))
+    else:
+        overlay = pygame.Surface((SCREEN_W, SCREEN_H), pygame.SRCALPHA)
+        overlay.fill((0,0,0,180))
+        screen.blit(overlay, (0,0))
+
+    # framed panel
+    panel_w, panel_h = SCREEN_W * 0.8, 220
+    panel = pygame.Rect((SCREEN_W - panel_w)//2, (SCREEN_H - panel_h)//2 - 20, panel_w, panel_h)
+    pygame.draw.rect(screen, PANEL, panel, border_radius=18)
+    pygame.draw.rect(screen, (40,40,50), panel, 4, border_radius=18)
+
+    # Title and subtitle
+    title_surf = font_big.render(title, True, color)
+    screen.blit(title_surf, title_surf.get_rect(center=(SCREEN_W//2, panel.centery - 20)))
+    if subtitle:
+        sub = font.render(subtitle, True, WHITE)
+        screen.blit(sub, sub.get_rect(center=(SCREEN_W//2, panel.centery + 34)))
+
+# ----------------------------
+# Menu UI: generated buttons (clickable)
+# ----------------------------
+# create rectangles for three buttons
+btn_w, btn_h = 320, 54
+btn_easy = pygame.Rect((SCREEN_W//2 - btn_w//2, 220, btn_w, btn_h))
+btn_mid  = pygame.Rect((SCREEN_W//2 - btn_w//2, 290, btn_w, btn_h))
+btn_hard = pygame.Rect((SCREEN_W//2 - btn_w//2, 360, btn_w, btn_h))
+
+# ----------------------------
+# Main loop
+# ----------------------------
+current_pair = new_pair()
+running = True
+while running:
+    dt = clock.tick(FPS)
+    mouse_pos = pygame.mouse.get_pos()
+    mouse_pressed = pygame.mouse.get_pressed()[0]  # left button state
+
+    for event in pygame.event.get():
+        if event.type == pygame.QUIT:
+            running = False
+
+        # keyboard global
+        if event.type == pygame.KEYDOWN:
+            if event.key == pygame.K_ESCAPE:
+                # go back to menu from playing, or quit from menu
+                if state == "playing":
+                    state = "menu"
+                else:
+                    running = False
+
+        # ---------- MENU ----------
+        if state == "menu":
+            if event.type == pygame.MOUSEBUTTONDOWN and event.button == 1:
+                if btn_easy.collidepoint(event.pos):
+                    start_game(128)
+                elif btn_mid.collidepoint(event.pos):
+                    start_game(256)
+                elif btn_hard.collidepoint(event.pos):
+                    start_game(512)
+
+            if event.type == pygame.KEYDOWN:
+                if event.key == pygame.K_e:
+                    start_game(128)
+                elif event.key == pygame.K_m:
+                    start_game(256)
+                elif event.key == pygame.K_h:
+                    start_game(512)
+
+        # ---------- PLAYING ----------
+        elif state == "playing":
+            # Restart from playing
+            if event.type == pygame.KEYDOWN and event.key == pygame.K_r:
+                reset_game_to_menu()
+
+            # Mouse / touchpad placement handling:
+            # Accept explicit MOUSEBUTTONDOWN OR a MOUSEMOTION when left button is pressed,
+            # but guard with mouse_was_pressed to avoid multiple placements per click/tap.
+            triggered = False
+            if event.type == pygame.MOUSEBUTTONDOWN and event.button == 1:
+                triggered = True
+            elif event.type == pygame.MOUSEMOTION and mouse_pressed and not mouse_was_pressed:
+                # handle touchpad tap (tap-to-click tends to show mouse_pressed True during MOUSEMOTION)
+                triggered = True
+
+            if triggered:
+                mx, my = pygame.mouse.get_pos()
+                gx = (mx - PADDING) // TILE_SIZE
+                gy = (my - PADDING) // TILE_SIZE
+                if 0 <= gx < GRID_W and 0 <= gy < GRID_H:
+                    if can_place(gx, gy, current_pair[0]):
+                        place_pair(gx, gy, current_pair[0])
+                        moves += 1
+                        current_pair = next_pair  # aktuelle wird zum nächsten
+                        next_pair = new_pair()    # neues kommendes Paar generieren
+                        # check win or no moves
+                        if rescued >= GOAL_CHICKENS:
+                            state = "victory"
+                            if sounds["victory"]: sounds["victory"].play()
+                        elif not any_move_possible(current_pair[0]):
+                            state = "gameover"
+                            # gameover sound played in gameover branch (once)
+            # update press guard
+            mouse_was_pressed = mouse_pressed
+
+        # ---------- GAMEOVER ----------
+        elif state == "gameover":
+            if not gameover_played:
+                if sounds["gameover"]: sounds["gameover"].play()
+                gameover_played = True
+            if event.type == pygame.KEYDOWN and event.key == pygame.K_r:
+                reset_game_to_menu()
+
+        # ---------- VICTORY ----------
+        elif state == "victory":
+            if not victory_played:
+                if sounds["victory"]: sounds["victory"].play()
+                victory_played = True
+            if event.type == pygame.KEYDOWN and event.key == pygame.K_r:
+                reset_game_to_menu()
+
+    # --- Render by state ---
+    if state == "menu":
+        screen.fill(BG)
+        title = font_title.render("Sort the CHICKENS!", True, ACCENT)
+        screen.blit(title, title.get_rect(center=(SCREEN_W//2, 120)))
+
+        # draw generated buttons
+        mx, my = mouse_pos
+        draw_button(btn_easy, "Easy — 128 Hühner", btn_easy.collidepoint((mx,my)))
+        draw_button(btn_mid,  "Medium — 256 Hühner", btn_mid.collidepoint((mx,my)))
+        draw_button(btn_hard, "Hardcore — 512 Hühner", btn_hard.collidepoint((mx,my)))
+
+        hint = font.render("Wähle per Klick oder Taste: E / M / H", True, WHITE)
+        screen.blit(hint, hint.get_rect(center=(SCREEN_W//2, 440)))
+
+    elif state == "playing":
+        draw_game()
+
+    elif state == "gameover":
+        draw_game()
+        draw_overlay("GAME OVER", "Drücke [R] zum Neustart", color=RED, bg_style="fancy")
+
+    elif state == "victory":
+        draw_game()
+        draw_overlay("Alle Hühner ordentlich sortiert!", f"Drücke [R] für eine neue Runde!", color=ACCENT, bg_style="fancy")
+
+    pygame.display.flip()
+
+pygame.quit()
+sys.exit()
