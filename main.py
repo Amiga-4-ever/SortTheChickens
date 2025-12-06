@@ -241,6 +241,16 @@ def start_game(goal):
     gameover_played = False
     victory_played = False
 
+    # Musik starten, falls an
+    if music_on and menu_music:
+        try:
+            pygame.mixer.music.load(menu_music)
+            pygame.mixer.music.set_volume(0.45)
+            pygame.mixer.music.play(-1)
+        except Exception:
+            pass
+
+
 # ----------------------------
 # UI (buttons/overlay)
 # ----------------------------
