@@ -130,7 +130,7 @@ victory_played = False
 mouse_was_pressed = False
 
 # ----------------------------
-# Helpers: game logic
+# Spiellogik
 # ----------------------------
 def new_pair():
     c1, c2 = random.randint(0, CHICKEN_TYPES-1), random.randint(0, CHICKEN_TYPES-1)
@@ -393,6 +393,31 @@ def draw_overlay(title, subtitle=None, color=ACCENT, bg_style="fancy"):
         sub = font.render(subtitle, True, WHITE)
         screen.blit(sub, sub.get_rect(center=(SCREEN_W//2, panel.centery + 34)))
 
+
+def draw_about():
+    overlay = pygame.Surface((SCREEN_W, SCREEN_H), pygame.SRCALPHA)
+    overlay.fill((0,0,0,180))  # dunkler, halbtransparenter Hintergrund
+    screen.blit(overlay, (0,0))
+
+    panel_w, panel_h = SCREEN_W * 0.85, 240
+    panel = pygame.Rect((SCREEN_W - panel_w)//2, (SCREEN_H - panel_h)//2, panel_w, panel_h)
+    pygame.draw.rect(screen, PANEL, panel, border_radius=18)
+    pygame.draw.rect(screen, (40,40,50), panel, 4, border_radius=18)
+
+    lines = [
+        "Sort the CHICKENS! 🐔",
+        "von Amiga4ever",
+        "Sortiere mind. 3 gleiche Hühner",
+        "Beitrag zum Hackathon 3.0 © 2025"
+    ]
+
+    # Jede Zeile zentrieren
+    for i, text in enumerate(lines):
+        surf = font_big.render(text, True, ACCENT if i==0 else WHITE)
+        line_y = panel.top + 30 + i * 50  # Abstand zwischen Zeilen
+        screen.blit(surf, surf.get_rect(center=(SCREEN_W//2, line_y)))
+
+
 # ----------------------------
 # Menu UI: klickbare buttons
 # ----------------------------
@@ -402,6 +427,8 @@ btn_easy = pygame.Rect((SCREEN_W//2 - btn_w//2, 220, btn_w, btn_h))
 btn_mid  = pygame.Rect((SCREEN_W//2 - btn_w//2, 290, btn_w, btn_h))
 btn_hard = pygame.Rect((SCREEN_W//2 - btn_w//2, 360, btn_w, btn_h))
 btn_highscore = pygame.Rect((SCREEN_W//2 - btn_w//2, 430, btn_w, btn_h))
+btn_about = pygame.Rect(SCREEN_W - 120, 20, 100, 40)  # kleine Ecke oben rechts
+
 
 
 # ----------------------------
@@ -445,6 +472,8 @@ while running:
                 elif btn_mid.collidepoint(event.pos): start_game(256)
                 elif btn_hard.collidepoint(event.pos): start_game(512)
                 elif btn_highscore.collidepoint(event.pos): state = "highscore"
+                if btn_about.collidepoint(event.pos):
+                    state = "about"
 
             if event.type == pygame.KEYDOWN:
                 if event.key == pygame.K_e: start_game(128)
@@ -521,6 +550,12 @@ while running:
             if event.type == pygame.KEYDOWN and event.key == pygame.K_q:
                 state = "menu"
 
+            # Innerhalb des Event-Loops, zusammen mit den anderen state-Abfragen
+        elif state == "about":
+            if event.type == pygame.KEYDOWN and event.key == pygame.K_q:
+                state = "menu"
+
+
     # --- State Drawing ---
     if state == "menu":
         screen.blit(menu_bg, (0,0))
@@ -533,11 +568,14 @@ while running:
         title = font_title.render("Sort the CHICKENS!", True, ACCENT)
         screen.blit(title, title.get_rect(center=(SCREEN_W//2, 120)))
         mx, my = mouse_pos
+
         draw_button(btn_easy, "Easy — 128 Hühner", btn_easy.collidepoint((mx,my)))
         draw_button(btn_mid,  "Medium — 256 Hühner", btn_mid.collidepoint((mx,my)))
         draw_button(btn_hard, "Hardcore — 512 Hühner", btn_hard.collidepoint((mx,my)))
         draw_button(btn_highscore, "Highscores", btn_highscore.collidepoint(mouse_pos))
+        draw_button(btn_about, "Über", btn_about.collidepoint(mouse_pos)) 
         hint = font.render("Wähle per Klick oder Taste: E / M / H / S", True, WHITE)
+
         screen.blit(hint, hint.get_rect(center=(SCREEN_W//2, 520)))
 
     elif state == "playing":
@@ -576,6 +614,19 @@ while running:
             screen.blit(txt, txt.get_rect(center=(SCREEN_W//2, start_y + i*30)))
         hint = font.render("Drücke [Q] für Hauptmenü", True, WHITE)
         screen.blit(hint, hint.get_rect(center=(SCREEN_W//2, SCREEN_H-60)))
+
+    
+    elif state == "about":
+        screen.blit(menu_bg, (0,0))
+        draw_about()
+
+        # Zurück ins Menü
+        hint = font.render("Drücke [Q] für Hauptmenü", True, WHITE)
+        screen.blit(hint, hint.get_rect(center=(SCREEN_W//2, SCREEN_H-60)))
+
+        if event.type == pygame.KEYDOWN and event.key == pygame.K_q:
+            state = "menu"
+
 
     pygame.display.flip()
 
