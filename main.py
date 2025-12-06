@@ -2,6 +2,8 @@ import pygame
 import random
 import sys
 import os
+from highscore import add_score, load_scores
+
 
 # ----------------------------
 # Helpers
@@ -30,7 +32,7 @@ BG = (30, 30, 40)
 PANEL = (45, 50, 65)
 WHITE = (240, 240, 240)
 GREY = (170, 178, 189)
-ACCENT = (255, 199, 92)
+ACCENT = (255, 211, 126)
 RED = (220, 60, 60)
 GREEN = (100, 220, 140)
 BTN_BG = (60, 70, 90)
@@ -171,6 +173,10 @@ def find_matches():
                 run_len = 1
     return matches
 
+# Pop-Animationen: Liste von Effekten
+pop_effects = []  # jeder Eintrag: { "x": int, "y": int, "img": Surface, "t": float }
+
+
 def place_pair(x, y, offsets):
     global rescued
     for ox, oy, c in offsets:
@@ -184,9 +190,22 @@ def place_pair(x, y, offsets):
         if not matches:
             break
         for (mx, my) in matches:
+            # Animation hinzufügen — Originalbild sichern
+            if 0 <= grid[mx][my] < len(chicken_images):
+                pop_effects.append({
+                    "x": mx,
+                    "y": my,
+                    "img": chicken_images[grid[mx][my]].copy(),
+                    "t": 0.0  # Zeitstempel für Animation
+                })
+
             grid[mx][my] = -1
             rescued += 1
-        if sounds["match"]: sounds["match"].play()
+        
+        # Match-Sound abspielen
+        if sounds["match"]:
+            sounds["match"].play()
+
 
 def any_move_possible(offsets):
     for x in range(GRID_W):
@@ -222,7 +241,7 @@ def start_game(goal):
     victory_played = False
 
 # ----------------------------
-# UI helpers (draw generated buttons & overlays)
+# UI (buttons/overlay)
 # ----------------------------
 def draw_button(rect, text, hover=False):
     color = BTN_HOVER if hover else BTN_BG
@@ -239,6 +258,7 @@ def draw_game():
         for y in range(GRID_H):
             rect = pygame.Rect(PADDING + x*TILE_SIZE, PADDING + y*TILE_SIZE, TILE_SIZE-4, TILE_SIZE-4)
             draw_chicken(rect, grid[x][y])
+
 
     # preview (mouse)
     if current_pair is not None:
@@ -274,6 +294,10 @@ def draw_game():
     screen.blit(text1, (PADDING+10, info_y+10))
     screen.blit(text2, (PADDING+10, info_y+40))
 
+    # Pop-Animationen rendern
+    update_and_draw_pop_effects(dt)
+
+
 def draw_chicken(rect, chicken_id, alpha=255, tint=None):
     if chicken_id < 0:
         pygame.draw.rect(screen, (60,65,80), rect, border_radius=12)
@@ -291,6 +315,42 @@ def draw_chicken(rect, chicken_id, alpha=255, tint=None):
         tmp = img.copy()
         tmp.set_alpha(alpha)
         screen.blit(tmp, rect)
+
+def update_and_draw_pop_effects(dt):
+    remove_list = []
+
+    for eff in pop_effects:
+        eff["t"] += dt / 220.0  # Animation dauert ca. 0.22s
+
+        t = eff["t"]
+        if t >= 1.0:
+            remove_list.append(eff)
+            continue
+
+        # Position berechnen
+        px = PADDING + eff["x"] * TILE_SIZE
+        py = PADDING + eff["y"] * TILE_SIZE
+
+        # Animation: größer -> kleiner + fade
+        scale = 1.0 + (0.25 * (1 - t))        # Start 1.25 → End 1.0
+        alpha = int(255 * (1 - t))           # Fade-out
+        angle = (t * 25) - 12                # leichte Rotation (-12° → +12°)
+
+        img = pygame.transform.rotozoom(eff["img"], angle, scale)
+        img.set_alpha(alpha)
+
+        # zentriert zeichnen
+        rect = img.get_rect(center=(
+            px + TILE_SIZE // 2,
+            py + TILE_SIZE // 2
+        ))
+
+        screen.blit(img, rect.topleft)
+
+    # fertige Effekte entfernen
+    for eff in remove_list:
+        pop_effects.remove(eff)
+
 
 def draw_overlay(title, subtitle=None, color=ACCENT, bg_style="fancy"):
     """
@@ -323,139 +383,155 @@ def draw_overlay(title, subtitle=None, color=ACCENT, bg_style="fancy"):
         screen.blit(sub, sub.get_rect(center=(SCREEN_W//2, panel.centery + 34)))
 
 # ----------------------------
-# Menu UI: generated buttons (clickable)
+# Menu UI: klickbare buttons
 # ----------------------------
-# create rectangles for three buttons
+
 btn_w, btn_h = 320, 54
 btn_easy = pygame.Rect((SCREEN_W//2 - btn_w//2, 220, btn_w, btn_h))
 btn_mid  = pygame.Rect((SCREEN_W//2 - btn_w//2, 290, btn_w, btn_h))
 btn_hard = pygame.Rect((SCREEN_W//2 - btn_w//2, 360, btn_w, btn_h))
+btn_highscore = pygame.Rect((SCREEN_W//2 - btn_w//2, 430, btn_w, btn_h))
+
 
 # ----------------------------
 # Main loop
 # ----------------------------
+
 current_pair = new_pair()
 running = True
+music_on = True
+name_input = ""
+entering_name = False
+
 while running:
     dt = clock.tick(FPS)
     mouse_pos = pygame.mouse.get_pos()
-    mouse_pressed = pygame.mouse.get_pressed()[0]  # left button state
+    mouse_pressed = pygame.mouse.get_pressed()[0]
 
+    # --- Event-Loop: nur einmal pro Frame ---
     for event in pygame.event.get():
         if event.type == pygame.QUIT:
             running = False
 
-        # keyboard global
+        # Globale Tastatur
         if event.type == pygame.KEYDOWN:
             if event.key == pygame.K_ESCAPE:
-                # go back to menu from playing, or quit from menu
                 if state == "playing":
                     state = "menu"
                 else:
                     running = False
+            elif event.key == pygame.K_m:  # Musik an/aus
+                music_on = not music_on
+                if music_on and menu_music:
+                    pygame.mixer.music.play(-1)
+                else:
+                    pygame.mixer.music.stop()
 
-        # ---------- MENU ----------
+        # State-spezifische Events
         if state == "menu":
             if event.type == pygame.MOUSEBUTTONDOWN and event.button == 1:
-                if btn_easy.collidepoint(event.pos):
-                    start_game(128)
-                elif btn_mid.collidepoint(event.pos):
-                    start_game(256)
-                elif btn_hard.collidepoint(event.pos):
-                    start_game(512)
+                if btn_easy.collidepoint(event.pos): start_game(128)
+                elif btn_mid.collidepoint(event.pos): start_game(256)
+                elif btn_hard.collidepoint(event.pos): start_game(512)
+                elif btn_highscore.collidepoint(event.pos): state = "highscore"
 
             if event.type == pygame.KEYDOWN:
-                if event.key == pygame.K_e:
-                    start_game(128)
-                elif event.key == pygame.K_m:
-                    start_game(256)
-                elif event.key == pygame.K_h:
-                    start_game(512)
+                if event.key == pygame.K_e: start_game(128)
+                elif event.key == pygame.K_m: start_game(256)
+                elif event.key == pygame.K_h: start_game(512)
+                elif event.key == pygame.K_s: state = "highscore"
 
-        # ---------- PLAYING ----------
         elif state == "playing":
-            # Restart from playing
-            if event.type == pygame.KEYDOWN and event.key == pygame.K_r:
-                reset_game_to_menu()
-
-            # Mouse / touchpad placement handling:
-            # Accept explicit MOUSEBUTTONDOWN OR a MOUSEMOTION when left button is pressed,
-            # but guard with mouse_was_pressed to avoid multiple placements per click/tap.
             triggered = False
             if event.type == pygame.MOUSEBUTTONDOWN and event.button == 1:
                 triggered = True
             elif event.type == pygame.MOUSEMOTION and mouse_pressed and not mouse_was_pressed:
-                # handle touchpad tap (tap-to-click tends to show mouse_pressed True during MOUSEMOTION)
                 triggered = True
 
             if triggered:
                 mx, my = pygame.mouse.get_pos()
                 gx = (mx - PADDING) // TILE_SIZE
                 gy = (my - PADDING) // TILE_SIZE
-                if 0 <= gx < GRID_W and 0 <= gy < GRID_H:
-                    if can_place(gx, gy, current_pair[0]):
-                        place_pair(gx, gy, current_pair[0])
-                        moves += 1
-                        current_pair = next_pair  # aktuelle wird zum nächsten
-                        next_pair = new_pair()    # neues kommendes Paar generieren
-                        # check win or no moves
-                        if rescued >= GOAL_CHICKENS:
-                            state = "victory"
-                            if sounds["victory"]: sounds["victory"].play()
-                        elif not any_move_possible(current_pair[0]):
-                            state = "gameover"
-                            # gameover sound played in gameover branch (once)
-            # update press guard
+                if 0 <= gx < GRID_W and 0 <= gy < GRID_H and can_place(gx, gy, current_pair[0]):
+                    place_pair(gx, gy, current_pair[0])
+                    moves += 1
+                    current_pair = next_pair
+                    next_pair = new_pair()
+
+                    if rescued >= GOAL_CHICKENS:
+                        state = "victory"
+                        name_input = ""
+                        entering_name = False
+                        if sounds["victory"]: sounds["victory"].play()
+                    elif not any_move_possible(current_pair[0]):
+                        state = "gameover"
+
             mouse_was_pressed = mouse_pressed
 
-        # ---------- GAMEOVER ----------
+            if event.type == pygame.KEYDOWN:
+                if event.key == pygame.K_r:
+                    reset_game_to_menu()
+
         elif state == "gameover":
             if not gameover_played:
                 if sounds["gameover"]: sounds["gameover"].play()
                 gameover_played = True
-            if event.type == pygame.KEYDOWN and event.key == pygame.K_r:
-                reset_game_to_menu()
+            if event.type == pygame.KEYDOWN:
+                if event.key == pygame.K_r:
+                    reset_game_to_menu()
 
-        # ---------- VICTORY ----------
         elif state == "victory":
             if not victory_played:
                 if sounds["victory"]: sounds["victory"].play()
                 victory_played = True
-            if event.type == pygame.KEYDOWN and event.key == pygame.K_r:
-                reset_game_to_menu()
+            if event.type == pygame.KEYDOWN:
+                if event.key == pygame.K_RETURN:
+                    state = "enter_name"
+                    name_input = ""
+                    entering_name = True
+                elif event.key == pygame.K_r:
+                    reset_game_to_menu()
 
-    # --- Render by state ---
+        elif state == "enter_name" and entering_name:
+            if event.type == pygame.KEYDOWN:
+                if event.key == pygame.K_RETURN and name_input.strip():
+                    add_score(name_input.strip(), rescued)
+                    state = "highscore"
+                    entering_name = False
+                elif event.key == pygame.K_BACKSPACE:
+                    name_input = name_input[:-1]
+                elif event.unicode.isprintable():
+                    name_input += event.unicode
+
+        elif state == "highscore":
+            if event.type == pygame.KEYDOWN and event.key == pygame.K_q:
+                state = "menu"
+
+    # --- State Drawing ---
     if state == "menu":
-        # Hintergrund
-        screen.blit(menu_bg, (0, 0))
-
-        # Musik starten, falls nicht bereits laufend
-        if not pygame.mixer.music.get_busy() and menu_music:
+        screen.blit(menu_bg, (0,0))
+        if music_on and not pygame.mixer.music.get_busy() and menu_music:
             try:
                 pygame.mixer.music.load(menu_music)
                 pygame.mixer.music.set_volume(0.45)
                 pygame.mixer.music.play(-1)
-            except Exception as e:
-                print("Konnte Menü-Musik nicht abspielen:", e)
-
-        # Titel
+            except Exception: pass
         title = font_title.render("Sort the CHICKENS!", True, ACCENT)
         screen.blit(title, title.get_rect(center=(SCREEN_W//2, 120)))
-
-        # Buttons
         mx, my = mouse_pos
         draw_button(btn_easy, "Easy — 128 Hühner", btn_easy.collidepoint((mx,my)))
         draw_button(btn_mid,  "Medium — 256 Hühner", btn_mid.collidepoint((mx,my)))
         draw_button(btn_hard, "Hardcore — 512 Hühner", btn_hard.collidepoint((mx,my)))
-
-        # Hinweis
-        hint = font.render("Wähle per Klick oder Taste: E / M / H", True, WHITE)
-        screen.blit(hint, hint.get_rect(center=(SCREEN_W//2, 440)))
-
-
+        draw_button(btn_highscore, "Highscores", btn_highscore.collidepoint(mouse_pos))
+        hint = font.render("Wähle per Klick oder Taste: E / M / H / S", True, WHITE)
+        screen.blit(hint, hint.get_rect(center=(SCREEN_W//2, 520)))
 
     elif state == "playing":
         draw_game()
+        base_x = GRID_W*TILE_SIZE + PADDING*2 + 20
+        base_y = PADDING + 125
+        label_hint = font.render(f"Musik: {'AN' if music_on else 'AUS'}  (Taste M)", True, GREY)
+        screen.blit(label_hint, (base_x, base_y + 70))
 
     elif state == "gameover":
         draw_game()
@@ -463,9 +539,33 @@ while running:
 
     elif state == "victory":
         draw_game()
-        draw_overlay("Alle Hühner ordentlich sortiert!", f"Drücke [R] für eine neue Runde!", color=ACCENT, bg_style="fancy")
+        draw_overlay("Alle Hühner ordentlich sortiert!", "Drücke [Enter] für Highscore", color=ACCENT, bg_style="fancy")
+
+    elif state == "enter_name":
+        draw_game()
+        draw_overlay("Gib deinen Namen ein:", f"Name: {name_input}", color=ACCENT)
+
+    elif state == "highscore":
+        screen.blit(menu_bg, (0,0))
+        if music_on and not pygame.mixer.music.get_busy() and menu_music:
+            try:
+                pygame.mixer.music.load(menu_music)
+                pygame.mixer.music.set_volume(0.45)
+                pygame.mixer.music.play(-1)
+            except Exception: pass
+        title = font_title.render("Highscores", True, ACCENT)
+        screen.blit(title, title.get_rect(center=(SCREEN_W//2, 80)))
+        scores = load_scores()
+        start_y = 150
+        for i, entry in enumerate(scores):
+            txt = font.render(f"{i+1}. {entry['name']} — {entry['score']}", True, WHITE)
+            screen.blit(txt, txt.get_rect(center=(SCREEN_W//2, start_y + i*30)))
+        hint = font.render("Drücke [Q] für Hauptmenü", True, WHITE)
+        screen.blit(hint, hint.get_rect(center=(SCREEN_W//2, SCREEN_H-60)))
 
     pygame.display.flip()
+
+
 
 pygame.quit()
 sys.exit()
