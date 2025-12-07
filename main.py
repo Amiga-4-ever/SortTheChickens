@@ -115,8 +115,9 @@ menu_bg = pygame.image.load(resource_path("assets\BG.png")).convert()
 menu_bg = pygame.transform.smoothscale(menu_bg, (SCREEN_W, SCREEN_H))
 
 # Menü-Hühnerbild
-chicken_icon_custom_right = pygame.image.load("assets/chickensleep.png").convert_alpha()
-chicken_icon_custom_left = pygame.image.load("assets/chickensleep1.png").convert_alpha()
+chicken_icon_custom_right = pygame.image.load(resource_path("assets/chickensleep.png")).convert_alpha()
+chicken_icon_custom_left  = pygame.image.load(resource_path("assets/chickensleep1.png")).convert_alpha()
+
 
 
 
