@@ -1,16 +1,17 @@
 import json
 import os
 import sys
+import tempfile
 
 def get_data_dir():
     """Gibt einen Plattform-spezifischen, beschreibbaren Ordner zurück."""
     if sys.platform == "win32":
-        base = os.getenv("APPDATA")  
+        base = os.getenv("APPDATA") or os.path.expanduser("~")
         return os.path.join(base, "SortTheChickens")
     elif sys.platform == "darwin":  # macOS
         base = os.path.expanduser("~/Library/Application Support")
         return os.path.join(base, "SaveTheChickens")
-    else:  # Linux
+    else:  # Linux und andere Unixes
         base = os.path.expanduser("~/.local/share")
         return os.path.join(base, "SaveTheChickens")
 
@@ -25,30 +26,50 @@ def load_scores():
 
     try:
         with open(SCORE_FILE, "r", encoding="utf-8") as f:
-            return json.load(f)
+            data = json.load(f)
+            if isinstance(data, list):
+                return data
+            else:
+                # Falls Datei korrupt / nicht erwartet, überschreiben wir später
+                return []
     except Exception as e:
-        print("Fehler beim Laden der Highscores:", e)
+        # Im Entwicklermodus kann man hier ein Logging ergänzen; für die exe unterdrücken wir die Exception-Ausgabe.
+        # Wir geben eine leere Liste zurück, damit das Spiel weiterläuft.
         return []
 
 
-def save_score(name, score):
+def save_scores(scores):
+    """Schreibt die komplette Scores-Liste atomar (Tempfile + replace)."""
     os.makedirs(DATA_DIR, exist_ok=True)
-
-    data = load_scores()
-    data.append({"name": name, "score": score})
-
-    # sortieren & auf die Top 10 begrenzen
-    data = sorted(data, key=lambda x: x["score"], reverse=True)[:10]
-
+    # Validierung: scores sollte eine Liste von dicts sein
     try:
-        with open(SCORE_FILE, "w", encoding="utf-8") as f:
-            json.dump(data, f, indent=4)
-    except Exception as e:
-        print("Fehler beim Speichern der Highscores:", e)
+        cleaned = []
+        for item in scores:
+            if isinstance(item, dict) and "name" in item and "score" in item:
+                cleaned.append({"name": str(item["name"]), "score": int(item["score"])})
+    except Exception:
+        cleaned = []
+
+    # Sortieren & Top 10
+    cleaned = sorted(cleaned, key=lambda x: x["score"], reverse=True)[:10]
+
+    # Atomares Schreiben: zuerst in Tempfile, dann ersetzen
+    try:
+        fd, tmp_path = tempfile.mkstemp(prefix="hs_", dir=DATA_DIR, text=True)
+        with os.fdopen(fd, "w", encoding="utf-8") as f:
+            json.dump(cleaned, f, indent=4, ensure_ascii=False)
+        os.replace(tmp_path, SCORE_FILE)
+    except Exception:
+        # Falls Schreiben fehlschlägt, ignorieren wir, damit das Spiel nicht abstürzt.
+        pass
 
 
 def add_score(name, score):
-    scores = load_scores()
-    scores.append({"name": name, "score": score})
-    scores = sorted(scores, key=lambda x: x["score"], reverse=True)[:10]  # Top 10
-    save_score(scores)
+    """Bequeme Funktion: lädt, fügt hinzu, speichert (Top 10)."""
+    try:
+        scores = load_scores()
+        scores.append({"name": str(name), "score": int(score)})
+        save_scores(scores)
+    except Exception:
+        # defensiv: niemals einen Fehler hier hochwerfen
+        pass
