@@ -58,7 +58,7 @@ screen = pygame.display.set_mode((SCREEN_W, SCREEN_H))
 pygame.display.set_caption("Sort the CHICKENS! 🐔")
 clock = pygame.time.Clock()
 
-# Fonts (try emoji-capable, fallback to default)
+# Fonts (mit emoji und fallback default)
 EMOJI_FONTS = ["Segoe UI Emoji", "Noto Color Emoji", "Apple Color Emoji", "Arial Unicode MS"]
 def load_font(size=28, emoji_test_char="🐔"):
     for name in EMOJI_FONTS:
@@ -77,7 +77,7 @@ font_title = load_font(44)
 
 
 # ----------------------------
-# Sounds (optional, tolerant)
+# Sounds
 # ----------------------------
 def try_load_sound(path):
     try:
@@ -93,21 +93,21 @@ sounds = {
     "gameover": try_load_sound("assets\gameover.wav"),
 }
 
-# set sane volumes if available
+# volumes für Soundeffekte
 if sounds["place"]: sounds["place"].set_volume(0.4)
 if sounds["match"]: sounds["match"].set_volume(0.25)
 if sounds["victory"]: sounds["victory"].set_volume(0.6)
 if sounds["gameover"]: sounds["gameover"].set_volume(0.5)
 
 # ----------------------------
-# Game data
+# Spieldaten
 # ----------------------------
 grid = [[-1 for _ in range(GRID_H)] for _ in range(GRID_W)]
 rescued = 0
 moves = 0
-GOAL_CHICKENS = 256  # default (will be set from menu)
+GOAL_CHICKENS = 256  # default wert
 current_pair = None
-last_place_time = 0  # global
+last_place_time = 0 
 title_anim_time = 0
 
 # Menü-Hintergrundbild
@@ -117,9 +117,6 @@ menu_bg = pygame.transform.smoothscale(menu_bg, (SCREEN_W, SCREEN_H))
 # Menü-Hühnerbild
 chicken_icon_custom_right = pygame.image.load(resource_path("assets/chickensleep.png")).convert_alpha()
 chicken_icon_custom_left  = pygame.image.load(resource_path("assets/chickensleep1.png")).convert_alpha()
-
-
-
 
 # Hühner Bilder
 chicken_images = []
@@ -135,7 +132,7 @@ state = "menu"  # menu, playing, gameover, victory
 gameover_played = False
 victory_played = False
 
-# Touchpad placement guard
+# Touchpad Platzierung
 mouse_was_pressed = False
 
 # ----------------------------
@@ -170,7 +167,7 @@ def find_matches():
                     for k in range(run_len):
                         matches.add((x-1-k, y))
                 run_len = 1
-    # vertical
+    # vertikal
     for x in range(GRID_W):
         run_len = 1
         for y in range(1, GRID_H+1):
@@ -183,8 +180,8 @@ def find_matches():
                 run_len = 1
     return matches
 
-# Pop-Animationen: Liste von Effekten
-pop_effects = []  # jeder Eintrag: { "x": int, "y": int, "img": Surface, "t": float }
+# Pop-Animationen Liste für Effekte
+pop_effects = [] 
 
 
 def place_pair(x, y, offsets):
@@ -192,9 +189,9 @@ def place_pair(x, y, offsets):
     for ox, oy, c in offsets:
         tx, ty = x + ox, y + oy
         grid[tx][ty] = c
-    # on place sound
+
     if sounds["place"]: sounds["place"].play()
-    # resolve matches (no gravity)
+    # Übereinstimmungen auflösen
     while True:
         matches = find_matches()
         if not matches:
@@ -236,7 +233,6 @@ def reset_game_to_menu():
     victory_played = False
     
 
-
 def start_game(goal):
     pygame.mixer.music.stop()
     global GOAL_CHICKENS, current_pair, next_pair, state, rescued, moves, gameover_played, victory_played
@@ -261,7 +257,7 @@ def start_game(goal):
 
 
 # ----------------------------
-# UI (buttons/overlay)
+# UI 
 # ----------------------------
 def draw_button(rect, text, hover=False):
     color = BTN_HOVER if hover else BTN_BG
@@ -280,7 +276,7 @@ def draw_game():
             draw_chicken(rect, grid[x][y])
 
 
-    # preview (mouse)
+    # vorschau: kann nicht platziert werden, rot färben, sonst normal
     if current_pair is not None:
         mx, my = pygame.mouse.get_pos()
         gx = (mx - PADDING) // TILE_SIZE
@@ -297,7 +293,7 @@ def draw_game():
                 rect = pygame.Rect(PADDING + (gx+ox)*TILE_SIZE, PADDING + (gy+oy)*TILE_SIZE, TILE_SIZE-4, TILE_SIZE-4)
                 draw_chicken(rect, c, alpha=alpha, tint=tint)
 
-    # next-pair box
+    # nächstes paar box
     base_x = GRID_W*TILE_SIZE + PADDING*2 + 20
     base_y = PADDING + 40
     label = font.render("Nächstes Paar:", True, WHITE)
@@ -306,7 +302,7 @@ def draw_game():
         rect = pygame.Rect(base_x + ox*TILE_SIZE, base_y + oy*TILE_SIZE, TILE_SIZE-4, TILE_SIZE-4)
         draw_chicken(rect, c)
 
-    # info panel
+    # info panel unten 
     info_y = PADDING + GRID_H*TILE_SIZE + 20
     pygame.draw.rect(screen, PANEL, (PADDING-6, info_y-6, GRID_W*TILE_SIZE+12, INFO_PANEL_H), border_radius=16)
     text1 = font.render(f"Sortiert: {rescued}/{GOAL_CHICKENS}", True, ACCENT)
@@ -352,9 +348,9 @@ def update_and_draw_pop_effects(dt):
         py = PADDING + eff["y"] * TILE_SIZE
 
         # Animation: größer -> kleiner + fade
-        scale = 1.0 + (0.25 * (1 - t))        # Start 1.25 → End 1.0
+        scale = 1.0 + (0.25 * (1 - t))        # Start bei 1.25, Ende 1.0
         alpha = int(255 * (1 - t))           # Fade-out
-        angle = (t * 25) - 12                # leichte Rotation (-12° → +12°)
+        angle = (t * 25) - 12                # Rotation
 
         img = pygame.transform.rotozoom(eff["img"], angle, scale)
         img.set_alpha(alpha)
@@ -377,7 +373,7 @@ def draw_overlay(title, subtitle=None, color=ACCENT, bg_style="fancy"):
     bg_style: 'fancy' -> gradient / painted background; 'solid' -> dark translucent
     """
     if bg_style == "fancy":
-        # draw a nice radial-ish background
+        # radialer hintergrund
         overlay = pygame.Surface((SCREEN_W, SCREEN_H), pygame.SRCALPHA)
         for i in range(160, 0, -8):
             alpha = int(180 * (i / 160))
@@ -389,13 +385,13 @@ def draw_overlay(title, subtitle=None, color=ACCENT, bg_style="fancy"):
         overlay.fill((0,0,0,180))
         screen.blit(overlay, (0,0))
 
-    # framed panel
+    # rahmen
     panel_w, panel_h = SCREEN_W * 0.8, 220
     panel = pygame.Rect((SCREEN_W - panel_w)//2, (SCREEN_H - panel_h)//2 - 20, panel_w, panel_h)
     pygame.draw.rect(screen, PANEL, panel, border_radius=18)
     pygame.draw.rect(screen, (40,40,50), panel, 4, border_radius=18)
 
-    # Title and subtitle
+    # Titel und Untertitel
     title_surf = font_big.render(title, True, color)
     screen.blit(title_surf, title_surf.get_rect(center=(SCREEN_W//2, panel.centery - 20)))
     if subtitle:
@@ -437,7 +433,6 @@ btn_mid  = pygame.Rect((SCREEN_W//2 - btn_w//2, 290, btn_w, btn_h))
 btn_hard = pygame.Rect((SCREEN_W//2 - btn_w//2, 360, btn_w, btn_h))
 btn_highscore = pygame.Rect((SCREEN_W//2 - btn_w//2, 430, btn_w, btn_h))
 btn_about = pygame.Rect(SCREEN_W - 120, 20, 100, 40)  # kleine Ecke oben rechts
-
 
 
 # ----------------------------
@@ -579,18 +574,18 @@ while running:
             except Exception as e:
                 print("Konnte Musik nicht abspielen:", e)
 
-        # --- Sanfte Titel-Animation ---
+        # --- Titel-Animation ---
         title_anim_time += dt * 0.003  # sehr langsam
 
-        # sanftes Auf/Ab
+        #  Auf/Ab
         float_y = 120 + math.sin(title_anim_time) * 6
 
-        # Titel normal (keine Farb-Pulsierung)
+        # Titel 
         title = font_title.render("Sort the CHICKENS!", True, ACCENT)
         title_rect = title.get_rect(center=(SCREEN_W//2, float_y))
         screen.blit(title, title_rect)
 
-        # --- Wackelndes Hühnchen ---
+        # wackelndes Bild
         chicken_icon_right = chicken_icon_custom_right
         chicken_icon_left = chicken_icon_custom_left
 
@@ -598,7 +593,7 @@ while running:
         ch_y = float_y + math.sin(title_anim_time * 1.4) * 4
         ch_angle = math.sin(title_anim_time * 1.8) * 4  # ±4°
 
-        # Hühnchen etwas vergrößern
+        # Bild vergrößern
         big_chicken_right = pygame.transform.rotozoom(chicken_icon_right, ch_angle, 1.25)
         ch_rect = big_chicken_right.get_rect(midleft=(title_rect.right + 20, ch_y))
         big_chicken_left = pygame.transform.rotozoom(chicken_icon_left, ch_angle, 1.25)
@@ -608,12 +603,12 @@ while running:
         rect_right = big_chicken_right.get_rect(midleft=(title_rect.right + 20, ch_y))
         rect_left  = big_chicken_left.get_rect(midright=(title_rect.left - 20, ch_y))  # gespiegelt links
 
-        # --- Auf den Bildschirm zeichnen ---
+        # Platzieren afu Bildschirm
         screen.blit(big_chicken_right, rect_right)
         screen.blit(big_chicken_left, rect_left)
 
 
-        # --- Buttons ---
+        # Buttons 
         mx, my = mouse_pos
         draw_button(btn_easy, "Easy — 128 Hühner", btn_easy.collidepoint((mx,my)))
         draw_button(btn_mid,  "Medium — 256 Hühner", btn_mid.collidepoint((mx,my)))
@@ -621,7 +616,7 @@ while running:
         draw_button(btn_highscore, "Highscores", btn_highscore.collidepoint(mouse_pos))
         draw_button(btn_about, "Über …", btn_about.collidepoint(mouse_pos))
 
-        # Hinweis unter den Buttons
+        # text unter buttons
         hint = font.render("Wähle per Klick oder Taste: E / M / H / S", True, WHITE)
         screen.blit(hint, hint.get_rect(center=(SCREEN_W//2, 520)))
 
@@ -667,7 +662,7 @@ while running:
         screen.blit(menu_bg, (0,0))
         draw_about()
 
-        # Zurück ins Menü
+        # Zurück ins Hauptmenü
         hint = font.render("Drücke [Q] für Hauptmenü", True, WHITE)
         screen.blit(hint, hint.get_rect(center=(SCREEN_W//2, SCREEN_H-60)))
 
@@ -676,8 +671,6 @@ while running:
 
 
     pygame.display.flip()
-
-
 
 pygame.quit()
 sys.exit()
