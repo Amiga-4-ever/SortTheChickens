@@ -2,6 +2,7 @@ import pygame
 import random
 import sys
 import os
+import math
 from highscore import add_score, load_scores
 
 
@@ -35,8 +36,8 @@ GREY = (170, 178, 189)
 ACCENT = (255, 211, 126)
 RED = (220, 60, 60)
 GREEN = (100, 220, 140)
-BTN_BG = (60, 70, 90)
-BTN_HOVER = (80, 95, 120)
+BTN_BG = (22, 2, 22)
+BTN_HOVER = (59, 34, 58)
 
 # ----------------------------
 # Initialization
@@ -74,6 +75,7 @@ font = load_font(22)
 font_big = load_font(36)
 font_title = load_font(44)
 
+
 # ----------------------------
 # Sounds (optional, tolerant)
 # ----------------------------
@@ -85,10 +87,10 @@ def try_load_sound(path):
         return None
 
 sounds = {
-    "place": try_load_sound("assets/place.wav"),
-    "match": try_load_sound("assets/match.wav"),
-    "victory": try_load_sound("assets/win.wav"),
-    "gameover": try_load_sound("assets/gameover.wav"),
+    "place": try_load_sound("assets\place.wav"),
+    "match": try_load_sound("assets\match.wav"),
+    "victory": try_load_sound("assets\win.wav"),
+    "gameover": try_load_sound("assets\gameover.wav"),
 }
 
 # set sane volumes if available
@@ -106,16 +108,22 @@ moves = 0
 GOAL_CHICKENS = 256  # default (will be set from menu)
 current_pair = None
 last_place_time = 0  # global
+title_anim_time = 0
 
 # Menü-Hintergrundbild
-menu_bg = pygame.image.load(resource_path("assets/BG.png")).convert()
+menu_bg = pygame.image.load(resource_path("assets\BG.png")).convert()
 menu_bg = pygame.transform.smoothscale(menu_bg, (SCREEN_W, SCREEN_H))
+
+# Menü-Hühnerbild
+chicken_icon_custom_right = pygame.image.load("assets/chickensleep.png").convert_alpha()
+chicken_icon_custom_left = pygame.image.load("assets/chickensleep1.png").convert_alpha()
+
 
 
 # Hühner Bilder
 chicken_images = []
 for i in range(CHICKEN_TYPES):
-    path = resource_path(f"assets/chicken{i}.png")
+    path = resource_path(f"assets\chicken{i}.png")
     img = pygame.image.load(path).convert_alpha()
     img = pygame.transform.smoothscale(img, (TILE_SIZE-4, TILE_SIZE-4))
     chicken_images.append(img)
@@ -257,7 +265,7 @@ def start_game(goal):
 def draw_button(rect, text, hover=False):
     color = BTN_HOVER if hover else BTN_BG
     pygame.draw.rect(screen, color, rect, border_radius=10)
-    pygame.draw.rect(screen, (20,20,30), rect, 2, border_radius=10)
+    pygame.draw.rect(screen, (61, 32, 42), rect, 2, border_radius=10)
     lbl = font.render(text, True, WHITE)
     screen.blit(lbl, lbl.get_rect(center=rect.center))
 
@@ -402,7 +410,7 @@ def draw_about():
     panel_w, panel_h = SCREEN_W * 0.85, 240
     panel = pygame.Rect((SCREEN_W - panel_w)//2, (SCREEN_H - panel_h)//2, panel_w, panel_h)
     pygame.draw.rect(screen, PANEL, panel, border_radius=18)
-    pygame.draw.rect(screen, (40,40,50), panel, 4, border_radius=18)
+    pygame.draw.rect(screen, (61, 32, 42), panel, 4, border_radius=18)
 
     lines = [
         "Sort the CHICKENS! 🐔",
@@ -440,6 +448,7 @@ running = True
 music_on = True
 name_input = ""
 entering_name = False
+
 
 while running:
     dt = clock.tick(FPS)
@@ -558,24 +567,61 @@ while running:
 
     # --- State Drawing ---
     if state == "menu":
-        screen.blit(menu_bg, (0,0))
-        if music_on and not pygame.mixer.music.get_busy() and menu_music:
+        screen.blit(menu_bg, (0, 0))
+
+        # --- Musik starten, falls nicht aktiv ---
+        if not pygame.mixer.music.get_busy() and menu_music:
             try:
                 pygame.mixer.music.load(menu_music)
                 pygame.mixer.music.set_volume(0.45)
                 pygame.mixer.music.play(-1)
-            except Exception: pass
-        title = font_title.render("Sort the CHICKENS!", True, ACCENT)
-        screen.blit(title, title.get_rect(center=(SCREEN_W//2, 120)))
-        mx, my = mouse_pos
+            except Exception as e:
+                print("Konnte Musik nicht abspielen:", e)
 
+        # --- Sanfte Titel-Animation ---
+        title_anim_time += dt * 0.003  # sehr langsam
+
+        # sanftes Auf/Ab
+        float_y = 120 + math.sin(title_anim_time) * 6
+
+        # Titel normal (keine Farb-Pulsierung)
+        title = font_title.render("Sort the CHICKENS!", True, ACCENT)
+        title_rect = title.get_rect(center=(SCREEN_W//2, float_y))
+        screen.blit(title, title_rect)
+
+        # --- Wackelndes Hühnchen ---
+        chicken_icon_right = chicken_icon_custom_right
+        chicken_icon_left = chicken_icon_custom_left
+
+        # kleine Bewegung & Rotation
+        ch_y = float_y + math.sin(title_anim_time * 1.4) * 4
+        ch_angle = math.sin(title_anim_time * 1.8) * 4  # ±4°
+
+        # Hühnchen etwas vergrößern
+        big_chicken_right = pygame.transform.rotozoom(chicken_icon_right, ch_angle, 1.25)
+        ch_rect = big_chicken_right.get_rect(midleft=(title_rect.right + 20, ch_y))
+        big_chicken_left = pygame.transform.rotozoom(chicken_icon_left, ch_angle, 1.25)
+        ch_rect = big_chicken_left.get_rect(midleft=(title_rect.right + 20, ch_y))
+
+        # Rechtecke berechnen
+        rect_right = big_chicken_right.get_rect(midleft=(title_rect.right + 20, ch_y))
+        rect_left  = big_chicken_left.get_rect(midright=(title_rect.left - 20, ch_y))  # gespiegelt links
+
+        # --- Auf den Bildschirm zeichnen ---
+        screen.blit(big_chicken_right, rect_right)
+        screen.blit(big_chicken_left, rect_left)
+
+
+        # --- Buttons ---
+        mx, my = mouse_pos
         draw_button(btn_easy, "Easy — 128 Hühner", btn_easy.collidepoint((mx,my)))
         draw_button(btn_mid,  "Medium — 256 Hühner", btn_mid.collidepoint((mx,my)))
         draw_button(btn_hard, "Hardcore — 512 Hühner", btn_hard.collidepoint((mx,my)))
         draw_button(btn_highscore, "Highscores", btn_highscore.collidepoint(mouse_pos))
-        draw_button(btn_about, "Über", btn_about.collidepoint(mouse_pos)) 
-        hint = font.render("Wähle per Klick oder Taste: E / M / H / S", True, WHITE)
+        draw_button(btn_about, "Über …", btn_about.collidepoint(mouse_pos))
 
+        # Hinweis unter den Buttons
+        hint = font.render("Wähle per Klick oder Taste: E / M / H / S", True, WHITE)
         screen.blit(hint, hint.get_rect(center=(SCREEN_W//2, 520)))
 
     elif state == "playing":
